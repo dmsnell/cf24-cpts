@@ -1,14 +1,15 @@
 <?php
 /**
- * Plugin Name: Blarg
- * Description: A plugin that does nothing.
+ * Plugin Name: CloudFest CPTs
+ * Description: Create data models in wp-admin.
  * Version: 1.0
- * Author: CloudFest Hackathon
+ * Author: Adam Zielinski <zieladam@git.wordpress.org>, Dennis Snell <dmsnell@git.wordpress.org>, Jan Vogt <janvogt@users.noreply.github.com>
+ *
+ * @package cf2024-cpt
  */
 
 /**
- * Converts parsed block format into the special
- * snowflake template format expected in JS.
+ * Converts parsed block format into format used in block templates.
  *
  * Example:
  *
@@ -24,11 +25,10 @@
  *     // output
  *     [ [ 'core/paragraph', [ 'content' => '<b>strong<i>em' ], [ $blocks ] ]
  *
- * @param $block
- *
- * @return array[].
+ * @param array $blocks Parsed blocks to convert.
+ * @return array[]      Array of blocks in array format used in block templates.
  */
-function php2silly( $blocks ) {
+function convert_parsed_blocks_for_js( $blocks ) {
 	$template = array();
 	foreach ( $blocks as $block ) {
 		if ( null === $block['blockName'] && empty( trim( $block['innerHTML'] ) ) ) {
@@ -40,7 +40,7 @@ function php2silly( $blocks ) {
 			$block['attrs'],
 		);
 		if ( count( $block['innerBlocks'] ) > 0 ) {
-			$entry[] = php2silly( $block['innerBlocks'] );
+			$entry[] = convert_parsed_blocks_for_js( $block['innerBlocks'] );
 		}
 		$template[] = $entry;
 	}
@@ -87,7 +87,7 @@ add_action(
 					'show_in_menu'  => true,
 					'show_in_rest'  => true,
 					'icon'          => 'dashicons-admin-site',
-					'template'      => php2silly( parse_blocks( $data_type->post_content ) ),
+					'template'      => convert_parsed_blocks_for_js( parse_blocks( $data_type->post_content ) ),
 					'template_lock' => 'all',
 				)
 			);
