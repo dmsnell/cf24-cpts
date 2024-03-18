@@ -29,16 +29,16 @@
  * @return array[].
  */
 function php2silly( $blocks ) {
-	$template = [];
-	foreach($blocks as $block) {
+	$template = array();
+	foreach ( $blocks as $block ) {
 		if ( null === $block['blockName'] && empty( trim( $block['innerHTML'] ) ) ) {
 			continue;
 		}
 
-		$entry = [
+		$entry = array(
 			$block['blockName'],
 			$block['attrs'],
-		];
+		);
 		if ( count( $block['innerBlocks'] ) > 0 ) {
 			$entry[] = php2silly( $block['innerBlocks'] );
 		}
@@ -49,35 +49,35 @@ function php2silly( $blocks ) {
 
 add_action(
 	'init',
-	function() {
+	function () {
 		register_post_type(
 			'wp_data_type',
 			array(
-				'label'         => 'Data Type',
-				'public'        => true,
-				'show_in_menu'  => true,
-				'show_in_rest'  => true,
+				'label'        => 'Data Type',
+				'public'       => true,
+				'show_in_menu' => true,
+				'show_in_rest' => true,
 			)
 		);
 
-		$data_types = new WP_Query( [ 'post_type' => 'wp_data_type' ] );
+		$data_types = new WP_Query( array( 'post_type' => 'wp_data_type' ) );
 
 		while ( $data_types->have_posts() ) {
 			$data_types->the_post();
 			$data_type      = get_post();
 			$data_type_info = get_post_meta( get_the_ID(), 'data_type_info', true );
 
-//			if ( '' === $data_type_info || false === $data_type_info ) {
-//				continue;
-//			}
-//
-//			$data_type_info = json_decode( $data_type_info );
-//			if ( JSON_ERROR_NONE !== json_last_error() ) {
-//				continue;
-//			}
+			// if ( '' === $data_type_info || false === $data_type_info ) {
+			// continue;
+			// }
+			//
+			// $data_type_info = json_decode( $data_type_info );
+			// if ( JSON_ERROR_NONE !== json_last_error() ) {
+			// continue;
+			// }
 
-//			echo "<plaintext>" . var_export( parse_blocks( $data_type->post_content ), true );
-//			die();
+			// echo "<plaintext>" . var_export( parse_blocks( $data_type->post_content ), true );
+			// die();
 
 			register_post_type(
 				strtolower( $data_type->post_title ),
@@ -88,7 +88,7 @@ add_action(
 					'show_in_rest'  => true,
 					'icon'          => 'dashicons-admin-site',
 					'template'      => php2silly( parse_blocks( $data_type->post_content ) ),
-					'template_lock' => 'insert',
+					'template_lock' => 'all',
 				)
 			);
 		}
@@ -103,24 +103,12 @@ function my_custom_gutenberg_scripts() {
 		array( 'wp-blocks', 'wp-dom-ready', 'wp-edit-post' )
 	);
 }
+
 add_action( 'enqueue_block_editor_assets', 'my_custom_gutenberg_scripts' );
 
 function jsonForCPT( $post_id ) {
-	$post = get_post( $post_id );
-	$template = null;
-
-	$query = new WP_Query( [ 'post_type' => 'wp_data_type', ] );
-	while ( $query->have_posts() ) {
-		$query->the_post();
-		$template = get_post();
-
-		if ( $post->post_type === strtolower( $template->post_title ) ) {
-			break;
-		}
-
-		$template = null;
-	}
-
+	$post     = get_post( $post_id );
+	$template = get_template_for_post_type( $post->post_type );
 	if ( null === $template ) {
 		return 'null';
 	}
@@ -128,26 +116,38 @@ function jsonForCPT( $post_id ) {
 	$post_json = blocks_to_json( parse_blocks( $post->post_content ) );
 	return $post_json;
 
-	return hydrate_blocks_with_structured_data(parse_blocks($template->post_content), $post_json);
+	return hydrate_blocks_with_structured_data( parse_blocks( $template->post_content ), $post_json );
+}
+
+function get_template_for_post_type( $post_type ) {
+	$query = new WP_Query( array( 'post_type' => 'wp_data_type' ) );
+	while ( $query->have_posts() ) {
+		$query->the_post();
+		$template = get_post();
+
+		if ( $post_type === strtolower( $template->post_title ) ) {
+			return $template;
+		}
+	}
 }
 
 /**
  * Recursively parses block markup and extracts metadata attributes.
  *
- * @param  array  $blocks  Array of block objects.
+ * @param array $blocks Array of block objects.
  *
  * @return array Array of metadata attribute mappings.
  */
 function blocks_to_json( $blocks ) {
-	$json = [];
+	$json = array();
 
 	foreach ( $blocks as $block ) {
 		// Check if the block has metadata attribute
 		if ( isset( $block['attrs']['metadata']['formFieldNames'] ) && is_array( $block['attrs']['metadata']['formFieldNames'] ) ) {
 			$metadata = $block['attrs']['metadata']['formFieldNames'];
 			foreach ( $metadata as $attributeName => $fieldName ) {
-				if ( $attributeName !== "metadata" && isset( $block['attrs'][ $attributeName ] ) ) {
-					$json[ $fieldName ] = isset($block['attrs'][ $attributeName ]) ? $block['attrs'][ $attributeName ] : null;
+				if ( $attributeName !== 'metadata' && isset( $block['attrs'][ $attributeName ] ) ) {
+					$json[ $fieldName ] = isset( $block['attrs'][ $attributeName ] ) ? $block['attrs'][ $attributeName ] : null;
 				}
 			}
 		}
@@ -155,26 +155,82 @@ function blocks_to_json( $blocks ) {
 		// Recursively process nested blocks
 		if ( ! empty( $block['innerBlocks'] ) ) {
 			$nestedMappings = blocks_to_json( $block['innerBlocks'] );
-			$json = array_merge( $json, $nestedMappings );
+			$json           = array_merge( $json, $nestedMappings );
 		}
 	}
 
 	return $json;
 }
 
+$data_type_titles = array();
+add_filter(
+	'init',
+	function () {
+		global $data_type_titles;
+		if ( empty( $data_type_titles ) ) {
+			// Get a list of all posts with wp_data_type post type
+			$data_types = new WP_Query( array( 'post_type' => 'wp_data_type' ) );
+			// Get all their titles in lowercase
+			$data_type_titles = array_map(
+				function ( $post ) {
+					return strtolower( $post->post_title );
+				},
+				$data_types->posts
+			);
+		}
+	}
+);
+
+function replace_hackathon_post_content( $posts, $query ) {
+	global $data_type_titles;
+	foreach ( $posts as $post ) {
+		if ( in_array( $post->post_type, $data_type_titles, true ) ) {
+			$template = get_template_for_post_type( $post->post_type );
+
+			$post_json       = blocks_to_json( parse_blocks( $post->post_content ) );
+			$template_blocks = parse_blocks( $template->post_content );
+
+			foreach ( $template_blocks as $k => $block ) {
+				if ( $block['blockName'] === 'core/paragraph' && ! empty( $block['attrs']['metadata']['formFieldNames']['content'] ) ) {
+					$jsonKey = $block['attrs']['metadata']['formFieldNames']['content'];
+					if ( empty( $post_json[ $jsonKey ] ) ) {
+						continue;
+					}
+					$p = new WP_HTML_Tag_Processor( $block['innerHTML'] );
+					$p->next_tag();
+					$p2 = new WP_HTML_Tag_Processor( '<p>' );
+					$p2->next_tag();
+					foreach ( $p->get_attribute_names_with_prefix( '' ) as $attribute ) {
+						$p2->set_attribute( $attribute, $p->get_attribute( $attribute ) );
+					}
+					$content                               = $post_json[ $block['attrs']['metadata']['formFieldNames']['content'] ];
+					$template_blocks[ $k ]['innerHTML']    = $p2 . $content . '</p>';
+					$template_blocks[ $k ]['innerContent'] = array( $template_blocks[ $k ]['innerHTML'] );
+				}
+			}
+			$hydrated           = hydrate_blocks_with_structured_data( $template_blocks, $post_json );
+			$post->post_content = implode( '', array_map( 'render_block', $hydrated ) );
+		}
+	}
+
+	return $posts;
+}
+
+add_filter( 'the_posts', 'replace_hackathon_post_content', 10, 2 );
+
 function hydrate_blocks_with_structured_data( $blocks, $structuredData ) {
 	foreach ( $blocks as $index => $block ) {
-		// Check if the block has metadata attribute
+		// Check if the block has metadata attribute.
 		if ( isset( $block['attrs']['metadata']['formFieldNames'] ) && is_array( $block['attrs']['metadata']['formFieldNames'] ) ) {
 			$metadata = $block['attrs']['metadata']['formFieldNames'];
 			foreach ( $metadata as $attributeName => $fieldName ) {
-				if ( $attributeName !== "metadata" && isset( $structuredData[ $fieldName ] ) ) {
+				if ( $attributeName !== 'metadata' && isset( $structuredData[ $fieldName ] ) ) {
 					$blocks[ $index ]['attrs'][ $attributeName ] = $structuredData[ $fieldName ];
 				}
 			}
 		}
 
-		// Recursively process nested blocks
+		// Recursively process nested blocks.
 		if ( ! empty( $block['innerBlocks'] ) ) {
 			$blocks[ $index ]['innerBlocks'] = hydrate_blocks_with_structured_data( $block['innerBlocks'], $structuredData );
 		}
@@ -183,28 +239,28 @@ function hydrate_blocks_with_structured_data( $blocks, $structuredData ) {
 	return $blocks;
 }
 //
-///**
+// **
 // * Example usage
 // */
-//$post_content     = '<!-- wp:paragraph {"content": "The WordPress Foundation","metadata":{"formFieldNames":{"content":"company_name"}}} -->
-//<p>The WordPress Foundation</p>
-//<!-- /wp:paragraph -->';
-//$blocks           = parse_blocks( $post_content );
-//$metadataMappings = blocks_to_structured_data( $blocks );
+// $post_content     = '<!-- wp:paragraph {"content": "The WordPress Foundation","metadata":{"formFieldNames":{"content":"company_name"}}} -->
+// <p>The WordPress Foundation</p>
+// <!-- /wp:paragraph -->';
+// $blocks           = parse_blocks( $post_content );
+// $metadataMappings = blocks_to_structured_data( $blocks );
 //
-//// Output the result
-//echo '<pre>';
-//var_dump( $metadataMappings );
-//echo '</pre>';
+// Output the result
+// echo '<pre>';
+// var_dump( $metadataMappings );
+// echo '</pre>';
 //
-//print_r(
-//	hydrate_blocks_with_structured_data(
-//		$blocks,
-//		[
-//			'company_name' => 'A new company name',
-//		]
-//	)
-//);
-//die();
+// print_r(
+// hydrate_blocks_with_structured_data(
+// $blocks,
+// [
+// 'company_name' => 'A new company name',
+// ]
+// )
+// );
+// die();
 //
-//die();
+// die();
