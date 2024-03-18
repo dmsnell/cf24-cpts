@@ -181,33 +181,64 @@ add_filter(
 	}
 );
 
+function hackathon_replace_attributes( $template_blocks, $post_json ) {
+	foreach ( $template_blocks as &$template_block ) {
+		if ( 'core/paragraph' === $template_block['blockName'] && isset( $template_block['attrs']['metadata']['formFieldNames']['content'] ) ) {
+			$content_attribute = $template_block['attrs']['metadata']['formFieldNames']['content'];
+			$content           = $post_json[ $content_attribute ];
+			if ( empty( $content ) ) {
+				continue;
+			}
+
+			$p = new WP_HTML_Tag_Processor( $template_block['innerHTML'] );
+			$p->next_tag();
+			$p2 = new WP_HTML_Tag_Processor( '<p>' );
+			$p2->next_tag();
+			foreach ( $p->get_attribute_names_with_prefix( '' ) ?? array() as $attribute ) {
+				$p2->set_attribute( $attribute, $p->get_attribute( $attribute ) );
+			}
+
+			$new_content = $p2->get_updated_html() . $content . '</p>';
+
+			$template_block['innerHTML']    = $new_content;
+			$template_block['innerContent'] = array( $new_content );
+		}
+
+		if ( 'core/image' === $template_block['blockName'] && isset( $template_block['attrs']['metadata']['formFieldNames']['url'] ) ) {
+			$url_attribute = $template_block['attrs']['metadata']['formFieldNames']['url'];
+			$url           = $post_json[ $url_attribute ];
+			if ( empty( $url ) ) {
+				continue;
+			}
+
+			$p = new WP_HTML_Tag_Processor( $template_block['innerHTML'] );
+			if ( $p->next_tag( 'IMG' ) ) {
+				$p->set_attribute( 'src', $url );
+			}
+
+			$new_content                    = $p->get_updated_html();
+			$template_block['innerHTML']    = $new_content;
+			$template_block['innerContent'] = array( $new_content );
+
+			$template_block['attrs']['url'] = $url;
+		}
+
+		if ( isset( $template_block['innerBlocks'] ) && is_array( $template_block['innerBlocks'] ) ) {
+			$template_block['innerBlocks'] = hackathon_replace_attributes( $template_block['innerBlocks'], $post_json );
+		}
+	}
+
+	return $template_blocks;
+}
+
 function replace_hackathon_post_content( $posts, $query ) {
 	global $data_type_titles;
 	foreach ( $posts as $post ) {
 		if ( in_array( $post->post_type, $data_type_titles, true ) ) {
 			$template = get_template_for_post_type( $post->post_type );
 
-			$post_json       = blocks_to_json( parse_blocks( $post->post_content ) );
-			$template_blocks = parse_blocks( $template->post_content );
-
-			foreach ( $template_blocks as $k => $block ) {
-				if ( $block['blockName'] === 'core/paragraph' && ! empty( $block['attrs']['metadata']['formFieldNames']['content'] ) ) {
-					$jsonKey = $block['attrs']['metadata']['formFieldNames']['content'];
-					if ( empty( $post_json[ $jsonKey ] ) ) {
-						continue;
-					}
-					$p = new WP_HTML_Tag_Processor( $block['innerHTML'] );
-					$p->next_tag();
-					$p2 = new WP_HTML_Tag_Processor( '<p>' );
-					$p2->next_tag();
-					foreach ( $p->get_attribute_names_with_prefix( '' ) as $attribute ) {
-						$p2->set_attribute( $attribute, $p->get_attribute( $attribute ) );
-					}
-					$content                               = $post_json[ $block['attrs']['metadata']['formFieldNames']['content'] ];
-					$template_blocks[ $k ]['innerHTML']    = $p2 . $content . '</p>';
-					$template_blocks[ $k ]['innerContent'] = array( $template_blocks[ $k ]['innerHTML'] );
-				}
-			}
+			$post_json          = blocks_to_json( parse_blocks( $post->post_content ) );
+			$template_blocks    = hackathon_replace_attributes( parse_blocks( $template->post_content ), $post_json );
 			$hydrated           = hydrate_blocks_with_structured_data( $template_blocks, $post_json );
 			$post->post_content = implode( '', array_map( 'render_block', $hydrated ) );
 		}
@@ -218,49 +249,23 @@ function replace_hackathon_post_content( $posts, $query ) {
 
 add_filter( 'the_posts', 'replace_hackathon_post_content', 10, 2 );
 
-function hydrate_blocks_with_structured_data( $blocks, $structuredData ) {
-	foreach ( $blocks as $index => $block ) {
+function hydrate_blocks_with_structured_data( $template_blocks, $data_from_instance ) {
+	foreach ( $template_blocks as &$template_block ) {
 		// Check if the block has metadata attribute.
-		if ( isset( $block['attrs']['metadata']['formFieldNames'] ) && is_array( $block['attrs']['metadata']['formFieldNames'] ) ) {
-			$metadata = $block['attrs']['metadata']['formFieldNames'];
-			foreach ( $metadata as $attributeName => $fieldName ) {
-				if ( $attributeName !== 'metadata' && isset( $structuredData[ $fieldName ] ) ) {
-					$blocks[ $index ]['attrs'][ $attributeName ] = $structuredData[ $fieldName ];
+		if ( isset( $template_block['attrs']['metadata']['formFieldNames'] ) && is_array( $template_block['attrs']['metadata']['formFieldNames'] ) ) {
+			$template_mappings = $template_block['attrs']['metadata']['formFieldNames'];
+			foreach ( $template_mappings as $attribute_to_replace => $data_name ) {
+				if ( 'metadata' !== $attribute_to_replace && isset( $data_from_instance[ $data_name ] ) ) {
+					$template_block['attrs'][ $attribute_to_replace ] = $data_from_instance[ $data_name ];
 				}
 			}
 		}
 
 		// Recursively process nested blocks.
-		if ( ! empty( $block['innerBlocks'] ) ) {
-			$blocks[ $index ]['innerBlocks'] = hydrate_blocks_with_structured_data( $block['innerBlocks'], $structuredData );
+		if ( ! empty( $template_block['innerBlocks'] ) ) {
+			$template_block['innerBlocks'] = hydrate_blocks_with_structured_data( $template_block['innerBlocks'], $data_from_instance );
 		}
 	}
 
-	return $blocks;
+	return $template_blocks;
 }
-//
-// **
-// * Example usage
-// */
-// $post_content     = '<!-- wp:paragraph {"content": "The WordPress Foundation","metadata":{"formFieldNames":{"content":"company_name"}}} -->
-// <p>The WordPress Foundation</p>
-// <!-- /wp:paragraph -->';
-// $blocks           = parse_blocks( $post_content );
-// $metadataMappings = blocks_to_structured_data( $blocks );
-//
-// Output the result
-// echo '<pre>';
-// var_dump( $metadataMappings );
-// echo '</pre>';
-//
-// print_r(
-// hydrate_blocks_with_structured_data(
-// $blocks,
-// [
-// 'company_name' => 'A new company name',
-// ]
-// )
-// );
-// die();
-//
-// die();
