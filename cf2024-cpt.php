@@ -35,11 +35,8 @@ function convert_parsed_blocks_for_js( $blocks ) {
 			continue;
 		}
 
-		$entry = array(
-			$block['blockName'],
-			$block['attrs'],
-		);
-		if ( count( $block['innerBlocks'] ) > 0 ) {
+		$entry = array( $block['blockName'], $block['attrs'] );
+		if ( isset( $block['innerBlocks'] ) && is_array( $block['innerBlocks'] ) ) {
 			$entry[] = convert_parsed_blocks_for_js( $block['innerBlocks'] );
 		}
 		$template[] = $entry;
@@ -64,20 +61,7 @@ add_action(
 
 		while ( $data_types->have_posts() ) {
 			$data_types->the_post();
-			$data_type      = get_post();
-			$data_type_info = get_post_meta( get_the_ID(), 'data_type_info', true );
-
-			// if ( '' === $data_type_info || false === $data_type_info ) {
-			// continue;
-			// }
-			//
-			// $data_type_info = json_decode( $data_type_info );
-			// if ( JSON_ERROR_NONE !== json_last_error() ) {
-			// continue;
-			// }
-
-			// echo "<plaintext>" . var_export( parse_blocks( $data_type->post_content ), true );
-			// die();
+			$data_type = get_post();
 
 			register_post_type(
 				strtolower( $data_type->post_title ),
