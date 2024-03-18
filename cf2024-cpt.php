@@ -188,6 +188,27 @@ function hackathon_replace_attributes( $template_blocks, $post_json ) {
 			$template_block['innerContent'] = array( $new_content );
 		}
 
+		if ( 'core/heading' === $template_block['blockName'] && isset( $template_block['attrs']['metadata']['formFieldNames']['content'] ) ) {
+			$content_attribute = $template_block['attrs']['metadata']['formFieldNames']['content'];
+			$content           = $post_json[ $content_attribute ];
+			if ( empty( $content ) ) {
+				continue;
+			}
+
+			$p = new WP_HTML_Tag_Processor( $template_block['innerHTML'] );
+			$p->next_tag();
+			$p2 = new WP_HTML_Tag_Processor( "<{$p->get_tag()}>" );
+			$p2->next_tag();
+			foreach ( $p->get_attribute_names_with_prefix( '' ) ?? array() as $attribute ) {
+				$p2->set_attribute( $attribute, $p->get_attribute( $attribute ) );
+			}
+
+			$new_content = $p2->get_updated_html() . $content . "</{$p->get_tag()}>";
+
+			$template_block['innerHTML']    = $new_content;
+			$template_block['innerContent'] = array( $new_content );
+		}
+
 		if ( 'core/image' === $template_block['blockName'] && isset( $template_block['attrs']['metadata']['formFieldNames']['url'] ) ) {
 			$url_attribute = $template_block['attrs']['metadata']['formFieldNames']['url'];
 			$url           = $post_json[ $url_attribute ];
